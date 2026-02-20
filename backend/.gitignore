@@ -1,0 +1,48 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Data directory
+data/*.db
+data/*.json
+data/*.db-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Config overrides (keep default config.json)
+config.local.json
+
+# Environment variables (keep .env.example)
+.env
+
+# Database files in root
+*.db
+*.db-shm
+*.db-wal

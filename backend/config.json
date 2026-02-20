@@ -1,0 +1,19 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 3000
+  },
+  "storage": {
+    "type": "sqlite",
+    "path": "./data/quest-todo.db"
+  },
+  "app": {
+    "deadlineThresholds": {
+      "short": 3,
+      "medium": 7,
+      "long": 14
+    },
+    "defaultReward": 10,
+    "pointsEnabled": true
+  }
+}
