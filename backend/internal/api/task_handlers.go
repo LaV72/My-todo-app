@@ -9,7 +9,7 @@ import (
 // CreateTask handles POST /api/tasks
 func (api *API) CreateTask(w http.ResponseWriter, r *http.Request) {
 	var req models.TaskCreateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -30,9 +30,8 @@ func (api *API) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 // GetTask handles GET /api/tasks/{id}
 func (api *API) GetTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
@@ -47,14 +46,13 @@ func (api *API) GetTask(w http.ResponseWriter, r *http.Request) {
 
 // UpdateTask handles PUT /api/tasks/{id}
 func (api *API) UpdateTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
 	var req models.TaskUpdateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -75,9 +73,8 @@ func (api *API) UpdateTask(w http.ResponseWriter, r *http.Request) {
 
 // DeleteTask handles DELETE /api/tasks/{id}
 func (api *API) DeleteTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
@@ -140,7 +137,7 @@ func (api *API) SearchTasks(w http.ResponseWriter, r *http.Request) {
 // CreateTasksBulk handles POST /api/tasks/bulk
 func (api *API) CreateTasksBulk(w http.ResponseWriter, r *http.Request) {
 	var req models.BulkTaskCreateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -162,7 +159,7 @@ func (api *API) CreateTasksBulk(w http.ResponseWriter, r *http.Request) {
 // DeleteTasksBulk handles DELETE /api/tasks/bulk
 func (api *API) DeleteTasksBulk(w http.ResponseWriter, r *http.Request) {
 	var req models.BulkTaskDeleteRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -182,9 +179,8 @@ func (api *API) DeleteTasksBulk(w http.ResponseWriter, r *http.Request) {
 
 // CompleteTask handles POST /api/tasks/{id}/complete
 func (api *API) CompleteTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
@@ -199,9 +195,8 @@ func (api *API) CompleteTask(w http.ResponseWriter, r *http.Request) {
 
 // FailTask handles POST /api/tasks/{id}/fail
 func (api *API) FailTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
@@ -216,9 +211,8 @@ func (api *API) FailTask(w http.ResponseWriter, r *http.Request) {
 
 // ReactivateTask handles POST /api/tasks/{id}/reactivate
 func (api *API) ReactivateTask(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/tasks/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Task ID is required")
+	id, ok := api.requireID(w, r, "/api/tasks/", "Task")
+	if !ok {
 		return
 	}
 
@@ -234,7 +228,7 @@ func (api *API) ReactivateTask(w http.ResponseWriter, r *http.Request) {
 // ReorderTasks handles POST /api/tasks/reorder
 func (api *API) ReorderTasks(w http.ResponseWriter, r *http.Request) {
 	var req models.TaskReorderRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}

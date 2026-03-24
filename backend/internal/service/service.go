@@ -31,6 +31,9 @@ type TaskService interface {
 
 	// Ordering
 	ReorderTasks(ctx context.Context, ids []string) error
+
+	// Internal task operations (called by other services)
+	RecalculateProgressAndAutoComplete(ctx context.Context, taskID string) error
 }
 
 // ObjectiveService handles objective-related business logic

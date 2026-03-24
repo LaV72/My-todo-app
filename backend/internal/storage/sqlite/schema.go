@@ -16,8 +16,9 @@ func (s *SQLiteStorage) migrate() error {
 	// Apply migrations in order
 	migrations := []migration{
 		{version: 1, name: "initial_schema", up: migrateV1},
+		{version: 2, name: "add_category_fk", up: migrateV2},
 		// Future migrations go here:
-		// {version: 2, name: "add_templates", up: migrateV2},
+		// {version: 3, name: "add_templates", up: migrateV3},
 	}
 
 	for _, m := range migrations {
@@ -146,6 +147,55 @@ func migrateV1(db *sql.DB) error {
 	-- Categories indexes
 	CREATE INDEX IF NOT EXISTS idx_categories_type ON categories(type);
 	CREATE INDEX IF NOT EXISTS idx_categories_order ON categories(order_index);
+	`
+
+	_, err := db.Exec(schema)
+	return err
+}
+
+// migrateV2 adds foreign key constraint for category
+func migrateV2(db *sql.DB) error {
+	// SQLite doesn't support adding FK constraints to existing tables
+	// We need to recreate the table with the FK constraint
+	schema := `
+	-- Create new tasks table with FK constraint
+	CREATE TABLE tasks_new (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT,
+		priority INTEGER NOT NULL CHECK(priority BETWEEN 1 AND 5),
+		deadline_type TEXT NOT NULL DEFAULT 'none',
+		deadline_date DATETIME,
+		category TEXT REFERENCES categories(id) ON DELETE SET NULL,
+		status TEXT NOT NULL DEFAULT 'active',
+		notes TEXT,
+		reward INTEGER DEFAULT 0,
+		order_index INTEGER DEFAULT 0,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL,
+		completed_at DATETIME
+	);
+
+	-- Copy data from old table
+	INSERT INTO tasks_new SELECT * FROM tasks;
+
+	-- Drop old table
+	DROP TABLE tasks;
+
+	-- Rename new table
+	ALTER TABLE tasks_new RENAME TO tasks;
+
+	-- Recreate indexes
+	CREATE INDEX idx_tasks_status ON tasks(status);
+	CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
+	CREATE INDEX idx_tasks_deadline ON tasks(deadline_date);
+	CREATE INDEX idx_tasks_category ON tasks(category);
+	CREATE INDEX idx_tasks_created ON tasks(created_at DESC);
+	CREATE INDEX idx_tasks_order ON tasks(order_index);
+	CREATE INDEX idx_tasks_status_priority ON tasks(status, priority DESC);
+	CREATE INDEX idx_tasks_status_deadline ON tasks(status, deadline_date);
+	CREATE INDEX idx_tasks_status_category ON tasks(status, category);
+	CREATE INDEX idx_tasks_category_status ON tasks(category, status);
 	`
 
 	_, err := db.Exec(schema)

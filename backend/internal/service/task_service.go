@@ -43,23 +43,30 @@ func NewTaskService(storage storage.Storage, clock Clock, idGen IDGenerator, val
 func (s *TaskServiceImpl) CreateTask(ctx context.Context, req models.TaskCreateRequest) (*models.Task, error) {
 	// 1. Validate input
 	if err := s.validator.Struct(req); err != nil {
-		return nil, s.wrapValidationError(err)
+		return nil, wrapValidationError(err)
 	}
 
-	// 2. Business rule: deadline must be in future
+	// 2. Validate deadline type
+	if req.Deadline != nil && req.Deadline.Type != "" {
+		if !validateDeadlineType(req.Deadline.Type) {
+			return nil, ErrInvalidInput
+		}
+	}
+
+	// 3. Business rule: deadline must be in future
 	if !s.config.AllowPastDeadlines && req.Deadline != nil && req.Deadline.Date != nil {
 		if req.Deadline.Date.Before(s.clock.Now()) {
 			return nil, ErrDeadlineInPast
 		}
 	}
 
-	// 3. Get next order value
+	// 4. Get next order value
 	order, err := s.getNextOrder(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get next order: %w", err)
 	}
 
-	// 4. Build task
+	// 5. Build task
 	now := s.clock.Now()
 	task := &models.Task{
 		ID:          s.idGen.Generate(),
@@ -81,7 +88,7 @@ func (s *TaskServiceImpl) CreateTask(ctx context.Context, req models.TaskCreateR
 		task.Deadline = *req.Deadline
 	}
 
-	// 5. Create objectives
+	// 6. Create objectives
 	objectives := make([]models.Objective, len(req.Objectives))
 	for i, objReq := range req.Objectives {
 		objectives[i] = models.Objective{
@@ -95,10 +102,10 @@ func (s *TaskServiceImpl) CreateTask(ctx context.Context, req models.TaskCreateR
 	}
 	task.Objectives = objectives
 
-	// 6. Calculate progress
+	// 7. Calculate progress
 	task.Progress = s.calculateProgress(objectives)
 
-	// 7. Persist to storage
+	// 8. Persist to storage
 	if err := s.storage.CreateTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("create task: %w", err)
 	}
@@ -128,7 +135,7 @@ func (s *TaskServiceImpl) UpdateTask(ctx context.Context, id string, req models.
 
 	// 2. Validate input
 	if err := s.validator.Struct(req); err != nil {
-		return nil, s.wrapValidationError(err)
+		return nil, wrapValidationError(err)
 	}
 
 	// 3. Apply updates (only non-nil fields)
@@ -142,6 +149,12 @@ func (s *TaskServiceImpl) UpdateTask(ctx context.Context, id string, req models.
 		task.Priority = *req.Priority
 	}
 	if req.Deadline != nil {
+		// Validate deadline type
+		if req.Deadline.Type != "" {
+			if !validateDeadlineType(req.Deadline.Type) {
+				return nil, ErrInvalidInput
+			}
+		}
 		// Business rule: validate future deadline
 		if !s.config.AllowPastDeadlines && req.Deadline.Date != nil {
 			if req.Deadline.Date.Before(s.clock.Now()) {
@@ -225,7 +238,7 @@ func (s *TaskServiceImpl) CreateTasksBulk(ctx context.Context, reqs []models.Tas
 	// 2. Validate all requests first
 	for i, req := range reqs {
 		if err := s.validator.Struct(req); err != nil {
-			return nil, fmt.Errorf("request %d: %w", i, s.wrapValidationError(err))
+			return nil, fmt.Errorf("request %d: %w", i, wrapValidationError(err))
 		}
 	}
 
@@ -364,6 +377,44 @@ func (s *TaskServiceImpl) ReorderTasks(ctx context.Context, ids []string) error 
 	return nil
 }
 
+// RecalculateProgressAndAutoComplete recalculates task progress and auto-completes if all objectives are done
+// This is called by ObjectiveService after objective changes
+func (s *TaskServiceImpl) RecalculateProgressAndAutoComplete(ctx context.Context, taskID string) error {
+	// 1. Get task with objectives
+	task, err := s.storage.GetTask(ctx, taskID)
+	if err != nil {
+		return fmt.Errorf("get task: %w", err)
+	}
+
+	// 2. Recalculate progress
+	task.Progress = s.calculateProgress(task.Objectives)
+	task.UpdatedAt = s.clock.Now()
+
+	// 3. Auto-complete if all objectives are done
+	if s.config.AutoCompleteOnFullProgress && task.Status == models.StatusActive {
+		allDone := len(task.Objectives) > 0
+		for _, obj := range task.Objectives {
+			if !obj.Completed {
+				allDone = false
+				break
+			}
+		}
+
+		if allDone {
+			task.Status = models.StatusComplete
+			completedAt := s.clock.Now()
+			task.CompletedAt = &completedAt
+		}
+	}
+
+	// 4. Update task
+	if err := s.storage.UpdateTask(ctx, task); err != nil {
+		return fmt.Errorf("update task: %w", err)
+	}
+
+	return nil
+}
+
 // Helper functions
 
 func (s *TaskServiceImpl) calculateProgress(objectives []models.Objective) float64 {
@@ -382,12 +433,12 @@ func (s *TaskServiceImpl) calculateProgress(objectives []models.Objective) float
 }
 
 func (s *TaskServiceImpl) getNextOrder(ctx context.Context) (int, error) {
-	// Get count of all tasks for next order value
-	count, err := s.storage.CountTasks(ctx, models.TaskFilter{})
+	// Get max order index and add 1 to get next order value
+	maxOrder, err := s.storage.GetMaxOrderIndex(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return count, nil
+	return maxOrder + 1, nil
 }
 
 func (s *TaskServiceImpl) buildTaskFromRequest(req models.TaskCreateRequest) (*models.Task, error) {
@@ -395,6 +446,13 @@ func (s *TaskServiceImpl) buildTaskFromRequest(req models.TaskCreateRequest) (*m
 	if !s.config.AllowPastDeadlines && req.Deadline != nil && req.Deadline.Date != nil {
 		if req.Deadline.Date.Before(s.clock.Now()) {
 			return nil, ErrDeadlineInPast
+		}
+	}
+
+	// Validate deadline type
+	if req.Deadline != nil && req.Deadline.Type != "" {
+		if !validateDeadlineType(req.Deadline.Type) {
+			return nil, ErrInvalidInput
 		}
 	}
 
@@ -439,32 +497,3 @@ func (s *TaskServiceImpl) buildTaskFromRequest(req models.TaskCreateRequest) (*m
 	return task, nil
 }
 
-func (s *TaskServiceImpl) wrapValidationError(err error) error {
-	validationErrs, ok := err.(validator.ValidationErrors)
-	if !ok {
-		return ErrInvalidInput
-	}
-
-	errors := make([]ValidationError, len(validationErrs))
-	for i, fieldErr := range validationErrs {
-		errors[i] = ValidationError{
-			Field:   fieldErr.Field(),
-			Message: s.getErrorMessage(fieldErr),
-		}
-	}
-
-	return &MultiValidationError{Errors: errors}
-}
-
-func (s *TaskServiceImpl) getErrorMessage(err validator.FieldError) string {
-	switch err.Tag() {
-	case "required":
-		return fmt.Sprintf("%s is required", err.Field())
-	case "min":
-		return fmt.Sprintf("%s must be at least %s", err.Field(), err.Param())
-	case "max":
-		return fmt.Sprintf("%s must be at most %s", err.Field(), err.Param())
-	default:
-		return fmt.Sprintf("%s is invalid", err.Field())
-	}
-}

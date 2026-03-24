@@ -41,8 +41,10 @@ type TaskStorage interface {
 	// Task-specific operations
 	UpdateTaskStatus(ctx context.Context, id string, status models.TaskStatus) error
 	ReorderTasks(ctx context.Context, ids []string) error
+	GetMaxOrderIndex(ctx context.Context) (int, error)
 
 	// Objective operations
+	GetObjective(ctx context.Context, objectiveID string) (*models.Objective, string, error) // returns objective, taskID, error
 	AddObjective(ctx context.Context, taskID string, obj *models.Objective) error
 	UpdateObjective(ctx context.Context, taskID, objID string, obj *models.Objective) error
 	DeleteObjective(ctx context.Context, taskID, objID string) error

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/LaV72/quest-todo/internal/models"
 	"github.com/LaV72/quest-todo/internal/storage"
@@ -36,11 +37,16 @@ func (s *StatsServiceImpl) GetCategoryStats(ctx context.Context) ([]models.Categ
 		return nil, fmt.Errorf("get category stats: %w", err)
 	}
 
-	// Convert map to slice
+	// Convert map to slice and sort for deterministic output
 	stats := make([]models.CategoryStat, 0, len(statsMap))
 	for _, stat := range statsMap {
 		stats = append(stats, *stat)
 	}
+
+	// Sort by CategoryID for consistent ordering
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].CategoryID < stats[j].CategoryID
+	})
 
 	return stats, nil
 }

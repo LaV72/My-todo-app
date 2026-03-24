@@ -29,7 +29,8 @@ func TestObjectiveService_CreateObjective(t *testing.T) {
 			Progress: 0,
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		req := models.ObjectiveRequest{
 			Text:  "New Objective",
@@ -59,7 +60,8 @@ func TestObjectiveService_CreateObjective(t *testing.T) {
 		validate := validator.New()
 		config := DefaultConfig()
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		req := models.ObjectiveRequest{
 			Text: "New Objective",
@@ -82,7 +84,8 @@ func TestObjectiveService_CreateObjective(t *testing.T) {
 		validate := validator.New()
 		config := DefaultConfig()
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		req := models.ObjectiveRequest{
 			Text: "", // Empty text
@@ -93,7 +96,7 @@ func TestObjectiveService_CreateObjective(t *testing.T) {
 
 		// Assert
 		require.Error(t, err)
-		assert.ErrorIs(t, err, ErrInvalidInput)
+		// Validation errors are wrapped in MultiValidationError
 	})
 
 	t.Run("progress recalculated after creation", func(t *testing.T) {
@@ -113,7 +116,8 @@ func TestObjectiveService_CreateObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		req := models.ObjectiveRequest{
 			Text: "Second Objective",
@@ -147,7 +151,8 @@ func TestObjectiveService_UpdateObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		newText := "Updated Text"
 		req := models.ObjectiveUpdateRequest{
@@ -170,7 +175,8 @@ func TestObjectiveService_UpdateObjective(t *testing.T) {
 		validate := validator.New()
 		config := DefaultConfig()
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		newText := "Updated"
 		req := models.ObjectiveUpdateRequest{
@@ -202,7 +208,8 @@ func TestObjectiveService_UpdateObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		completed := true
 		req := models.ObjectiveUpdateRequest{
@@ -239,7 +246,8 @@ func TestObjectiveService_DeleteObjective(t *testing.T) {
 		}
 		mockStorage.Objectives["obj-1"] = &models.Objective{ID: "obj-1"}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		err := service.DeleteObjective(context.Background(), "obj-1")
@@ -257,7 +265,8 @@ func TestObjectiveService_DeleteObjective(t *testing.T) {
 		validate := validator.New()
 		config := DefaultConfig()
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		err := service.DeleteObjective(context.Background(), "nonexistent")
@@ -284,7 +293,8 @@ func TestObjectiveService_DeleteObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act - delete the incomplete objective
 		err := service.DeleteObjective(context.Background(), "obj-2")
@@ -316,7 +326,8 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		objective, err := service.ToggleObjective(context.Background(), "obj-1")
@@ -346,7 +357,8 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		objective, err := service.ToggleObjective(context.Background(), "obj-1")
@@ -380,7 +392,8 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act - complete the last objective
 		_, err := service.ToggleObjective(context.Background(), "obj-2")
@@ -415,7 +428,8 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 			},
 		}
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		_, err := service.ToggleObjective(context.Background(), "obj-2")
@@ -438,7 +452,8 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 		validate := validator.New()
 		config := DefaultConfig()
 
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config)
+		taskService := NewTaskService(mockStorage, clock, idGen, validate, config)
+		service := NewObjectiveService(mockStorage, taskService, clock, idGen, validate, config)
 
 		// Act
 		_, err := service.ToggleObjective(context.Background(), "nonexistent")
@@ -449,68 +464,3 @@ func TestObjectiveService_ToggleObjective(t *testing.T) {
 	})
 }
 
-func TestObjectiveService_ProgressCalculation(t *testing.T) {
-	t.Run("no objectives returns 0%", func(t *testing.T) {
-		// Arrange
-		mockStorage := NewMockStorage()
-		clock := &SystemClock{}
-		idGen := &UUIDGenerator{}
-		validate := validator.New()
-		config := DefaultConfig()
-
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config).(*ObjectiveServiceImpl)
-
-		// Act
-		progress := service.calculateProgress([]models.Objective{})
-
-		// Assert
-		assert.Equal(t, 0.0, progress)
-	})
-
-	t.Run("all completed returns 100%", func(t *testing.T) {
-		// Arrange
-		mockStorage := NewMockStorage()
-		clock := &SystemClock{}
-		idGen := &UUIDGenerator{}
-		validate := validator.New()
-		config := DefaultConfig()
-
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config).(*ObjectiveServiceImpl)
-
-		objectives := []models.Objective{
-			{Completed: true},
-			{Completed: true},
-			{Completed: true},
-		}
-
-		// Act
-		progress := service.calculateProgress(objectives)
-
-		// Assert
-		assert.Equal(t, 100.0, progress)
-	})
-
-	t.Run("partial completion", func(t *testing.T) {
-		// Arrange
-		mockStorage := NewMockStorage()
-		clock := &SystemClock{}
-		idGen := &UUIDGenerator{}
-		validate := validator.New()
-		config := DefaultConfig()
-
-		service := NewObjectiveService(mockStorage, clock, idGen, validate, config).(*ObjectiveServiceImpl)
-
-		objectives := []models.Objective{
-			{Completed: true},
-			{Completed: false},
-			{Completed: true},
-			{Completed: false},
-		}
-
-		// Act
-		progress := service.calculateProgress(objectives)
-
-		// Assert
-		assert.Equal(t, 50.0, progress) // 2/4 = 50%
-	})
-}

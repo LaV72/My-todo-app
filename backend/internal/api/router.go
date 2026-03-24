@@ -41,18 +41,24 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 
 	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
+		path = strings.TrimSuffix(path, "/") // Remove trailing slash
+
+		// Reject empty segments (e.g., /api/tasks//complete)
+		if strings.Contains(path, "//") {
+			http.NotFound(w, r)
+			return
+		}
+
 		parts := strings.Split(path, "/")
 
 		// Handle special routes first
 		switch parts[0] {
-		case "search":
-			if r.Method == http.MethodGet {
-				api.SearchTasks(w, r)
-			} else {
-				methodNotAllowed(w, r)
-			}
-			return
 		case "bulk":
+			// Validate: exactly 1 segment
+			if len(parts) != 1 {
+				http.NotFound(w, r)
+				return
+			}
 			switch r.Method {
 			case http.MethodPost:
 				api.CreateTasksBulk(w, r)
@@ -63,6 +69,11 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 			}
 			return
 		case "reorder":
+			// Validate: exactly 1 segment
+			if len(parts) != 1 {
+				http.NotFound(w, r)
+				return
+			}
 			if r.Method == http.MethodPost {
 				api.ReorderTasks(w, r)
 			} else {
@@ -74,7 +85,7 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 		// Handle task ID routes
 		if len(parts) >= 1 && parts[0] != "" {
 			// Check for action routes
-			if len(parts) >= 2 {
+			if len(parts) == 2 {
 				action := parts[1]
 				switch action {
 				case "complete":
@@ -105,10 +116,18 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 						methodNotAllowed(w, r)
 					}
 					return
+				default:
+					// Unknown action with 2 segments
+					http.NotFound(w, r)
+					return
 				}
+			} else if len(parts) > 2 {
+				// Too many segments (e.g., /api/tasks/123/extra/stuff)
+				http.NotFound(w, r)
+				return
 			}
 
-			// Standard CRUD operations on task
+			// Standard CRUD operations on task (exactly 1 segment: the ID)
 			switch r.Method {
 			case http.MethodGet:
 				api.GetTask(w, r)
@@ -128,20 +147,36 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 	// Objective routes
 	mux.HandleFunc("/api/objectives/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/objectives/")
+		path = strings.TrimSuffix(path, "/") // Remove trailing slash
+
+		// Reject empty segments
+		if strings.Contains(path, "//") {
+			http.NotFound(w, r)
+			return
+		}
+
 		parts := strings.Split(path, "/")
 
 		if len(parts) >= 1 && parts[0] != "" {
 			// Check for toggle action
-			if len(parts) >= 2 && parts[1] == "toggle" {
+			if len(parts) == 2 && parts[1] == "toggle" {
 				if r.Method == http.MethodPost {
 					api.ToggleObjective(w, r)
 				} else {
 					methodNotAllowed(w, r)
 				}
 				return
+			} else if len(parts) > 2 {
+				// Too many segments
+				http.NotFound(w, r)
+				return
+			} else if len(parts) == 2 {
+				// Unknown action with 2 segments
+				http.NotFound(w, r)
+				return
 			}
 
-			// Standard CRUD operations
+			// Standard CRUD operations (exactly 1 segment: the ID)
 			switch r.Method {
 			case http.MethodPut:
 				api.UpdateObjective(w, r)
@@ -169,6 +204,23 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 	})
 
 	mux.HandleFunc("/api/categories/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/categories/")
+		path = strings.TrimSuffix(path, "/") // Remove trailing slash
+
+		// Reject empty segments
+		if strings.Contains(path, "//") || path == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		parts := strings.Split(path, "/")
+
+		// Validate: exactly 1 segment (the category ID)
+		if len(parts) != 1 {
+			http.NotFound(w, r)
+			return
+		}
+
 		switch r.Method {
 		case http.MethodGet:
 			api.GetCategory(w, r)
@@ -202,9 +254,10 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 	var handler http.Handler = mux
 
 	// Always apply these middleware (in reverse order of execution)
-	handler = middleware.Recovery(handler)
+	// Recovery should be outermost to catch all panics
 	handler = middleware.ContentType(handler)
 	handler = middleware.RequestID(handler)
+	handler = middleware.Recovery(handler)
 
 	// Optional middleware
 	if config.EnableLogging {
@@ -220,7 +273,5 @@ func NewRouter(api *API, config RouterConfig) http.Handler {
 
 // methodNotAllowed returns a 405 Method Not Allowed response
 func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusMethodNotAllowed)
-	w.Write([]byte(`{"success":false,"error":{"code":"METHOD_NOT_ALLOWED","message":"Method not allowed"}}`))
+	ErrorResponse(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "Method not allowed")
 }

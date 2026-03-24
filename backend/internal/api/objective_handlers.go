@@ -22,7 +22,7 @@ func (api *API) CreateObjective(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req models.ObjectiveRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -43,14 +43,13 @@ func (api *API) CreateObjective(w http.ResponseWriter, r *http.Request) {
 
 // UpdateObjective handles PUT /api/objectives/{id}
 func (api *API) UpdateObjective(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/objectives/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Objective ID is required")
+	id, ok := api.requireID(w, r, "/api/objectives/", "Objective")
+	if !ok {
 		return
 	}
 
 	var req models.ObjectiveUpdateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -71,9 +70,8 @@ func (api *API) UpdateObjective(w http.ResponseWriter, r *http.Request) {
 
 // DeleteObjective handles DELETE /api/objectives/{id}
 func (api *API) DeleteObjective(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/objectives/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Objective ID is required")
+	id, ok := api.requireID(w, r, "/api/objectives/", "Objective")
+	if !ok {
 		return
 	}
 
@@ -87,9 +85,8 @@ func (api *API) DeleteObjective(w http.ResponseWriter, r *http.Request) {
 
 // ToggleObjective handles POST /api/objectives/{id}/toggle
 func (api *API) ToggleObjective(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/objectives/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Objective ID is required")
+	id, ok := api.requireID(w, r, "/api/objectives/", "Objective")
+	if !ok {
 		return
 	}
 

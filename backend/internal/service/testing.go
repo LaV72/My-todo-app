@@ -147,6 +147,16 @@ func (m *MockStorage) ReorderTasks(ctx context.Context, ids []string) error {
 	return nil
 }
 
+func (m *MockStorage) GetMaxOrderIndex(ctx context.Context) (int, error) {
+	maxOrder := -1
+	for _, task := range m.Tasks {
+		if task.Order > maxOrder {
+			maxOrder = task.Order
+		}
+	}
+	return maxOrder, nil
+}
+
 func (m *MockStorage) AddObjective(ctx context.Context, taskID string, obj *models.Objective) error {
 	if m.AddObjectiveFunc != nil {
 		return m.AddObjectiveFunc(ctx, taskID, obj)
@@ -194,6 +204,17 @@ func (m *MockStorage) DeleteObjective(ctx context.Context, taskID, objID string)
 		}
 	}
 	return storage.ErrNotFound
+}
+
+func (m *MockStorage) GetObjective(ctx context.Context, objectiveID string) (*models.Objective, string, error) {
+	for _, task := range m.Tasks {
+		for i, obj := range task.Objectives {
+			if obj.ID == objectiveID {
+				return &task.Objectives[i], task.ID, nil
+			}
+		}
+	}
+	return nil, "", storage.ErrNotFound
 }
 
 func (m *MockStorage) CreateCategory(ctx context.Context, cat *models.Category) error {

@@ -102,11 +102,12 @@ func NewAPI(
 }
 
 // DecodeJSONBody decodes a JSON request body into the target struct
-func DecodeJSONBody(r *http.Request, dst interface{}) error {
-	if r.Body == nil {
-		return ErrEmptyBody
-	}
+// Limits request body size to 1MB to prevent DoS attacks
+func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) error {
 	defer r.Body.Close()
+
+	// Limit request body to 1MB to prevent DoS attacks
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -130,6 +131,17 @@ func ExtractID(r *http.Request, prefix string) string {
 	// Handle nested routes like /tasks/{id}/complete
 	parts := strings.Split(id, "/")
 	return parts[0]
+}
+
+// requireID extracts and validates an ID from the URL path.
+// Returns the ID and true if valid, or writes an error response and returns false.
+func (api *API) requireID(w http.ResponseWriter, r *http.Request, prefix, entityName string) (string, bool) {
+	id := ExtractID(r, prefix)
+	if id == "" {
+		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", entityName+" ID is required")
+		return "", false
+	}
+	return id, true
 }
 
 // ParseTaskFilter parses query parameters into a TaskFilter
@@ -193,14 +205,14 @@ func ParseTaskFilter(r *http.Request) models.TaskFilter {
 		filter.SortOrder = sortOrder
 	}
 
-	// Pagination
+	// Pagination (capped at 1000 to prevent DoS)
 	if limit := q.Get("limit"); limit != "" {
-		if l, err := strconv.Atoi(limit); err == nil && l > 0 {
+		if l, err := strconv.Atoi(limit); err == nil && l > 0 && l <= 1000 {
 			filter.Limit = l
 		}
 	}
 	if offset := q.Get("offset"); offset != "" {
-		if o, err := strconv.Atoi(offset); err == nil && o >= 0 {
+		if o, err := strconv.Atoi(offset); err == nil && o >= 0 && o <= 1000000 {
 			filter.Offset = o
 		}
 	}

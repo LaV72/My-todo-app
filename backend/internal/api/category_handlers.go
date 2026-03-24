@@ -9,7 +9,7 @@ import (
 // CreateCategory handles POST /api/categories
 func (api *API) CreateCategory(w http.ResponseWriter, r *http.Request) {
 	var req models.CategoryCreateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -30,9 +30,8 @@ func (api *API) CreateCategory(w http.ResponseWriter, r *http.Request) {
 
 // GetCategory handles GET /api/categories/{id}
 func (api *API) GetCategory(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/categories/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Category ID is required")
+	id, ok := api.requireID(w, r, "/api/categories/", "Category")
+	if !ok {
 		return
 	}
 
@@ -47,14 +46,13 @@ func (api *API) GetCategory(w http.ResponseWriter, r *http.Request) {
 
 // UpdateCategory handles PUT /api/categories/{id}
 func (api *API) UpdateCategory(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/categories/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Category ID is required")
+	id, ok := api.requireID(w, r, "/api/categories/", "Category")
+	if !ok {
 		return
 	}
 
 	var req models.CategoryUpdateRequest
-	if err := DecodeJSONBody(r, &req); err != nil {
+	if err := DecodeJSONBody(w, r, &req); err != nil {
 		ErrorResponse(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON in request body")
 		return
 	}
@@ -75,9 +73,8 @@ func (api *API) UpdateCategory(w http.ResponseWriter, r *http.Request) {
 
 // DeleteCategory handles DELETE /api/categories/{id}
 func (api *API) DeleteCategory(w http.ResponseWriter, r *http.Request) {
-	id := ExtractID(r, "/api/categories/")
-	if id == "" {
-		ErrorResponse(w, http.StatusBadRequest, "INVALID_ID", "Category ID is required")
+	id, ok := api.requireID(w, r, "/api/categories/", "Category")
+	if !ok {
 		return
 	}
 

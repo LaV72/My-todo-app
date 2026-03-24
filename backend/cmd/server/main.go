@@ -194,8 +194,8 @@ func main() {
 	// Initialize services
 	log.Println("Initializing services...")
 	taskService := service.NewTaskService(storage, clock, idGen, validate, &config.Service)
-	objectiveService := service.NewObjectiveService(storage, clock, idGen, validate, &config.Service)
-	categoryService := service.NewCategoryService(storage, validate, &config.Service)
+	objectiveService := service.NewObjectiveService(storage, taskService, clock, idGen, validate, &config.Service)
+	categoryService := service.NewCategoryService(storage, idGen, validate, &config.Service)
 	statsService := service.NewStatsService(storage)
 	log.Println("Services initialized successfully")
 
@@ -218,11 +218,12 @@ func main() {
 
 	// Create HTTP server
 	server := &http.Server{
-		Addr:         config.Server.Address(),
-		Handler:      router,
-		ReadTimeout:  config.Server.ReadTimeout,
-		WriteTimeout: config.Server.WriteTimeout,
-		IdleTimeout:  config.Server.IdleTimeout,
+		Addr:           config.Server.Address(),
+		Handler:        router,
+		ReadTimeout:    config.Server.ReadTimeout,
+		WriteTimeout:   config.Server.WriteTimeout,
+		IdleTimeout:    config.Server.IdleTimeout,
+		MaxHeaderBytes: 1 << 20, // 1MB header limit to prevent DoS
 	}
 
 	// Start server in a goroutine

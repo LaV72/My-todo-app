@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LaV72/quest-todo/internal/models"
 	"github.com/LaV72/quest-todo/internal/storage"
@@ -98,6 +99,9 @@ func (s *SQLiteStorage) GetTask(ctx context.Context, id string) (*models.Task, e
 	if err != nil {
 		return nil, fmt.Errorf("load tags: %w", err)
 	}
+
+	// Calculate computed fields
+	s.calculateComputedFields(task)
 
 	return task, nil
 }
@@ -257,8 +261,24 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter models.TaskFilter)
 		args = append(args, models.StatusComplete)
 	}
 
-	// Add sorting
+	// Add sorting with SQL injection protection
 	if filter.SortBy != "" {
+		// Whitelist of allowed sort columns
+		allowedColumns := map[string]bool{
+			"priority":      true,
+			"created_at":    true,
+			"updated_at":    true,
+			"title":         true,
+			"status":        true,
+			"deadline_date": true,
+			"order_index":   true,
+		}
+
+		// Validate sort column
+		if !allowedColumns[filter.SortBy] {
+			filter.SortBy = "created_at" // safe default
+		}
+
 		order := "ASC"
 		if filter.SortOrder == "desc" {
 			order = "DESC"
@@ -302,16 +322,41 @@ func (s *SQLiteStorage) ListTasks(ctx context.Context, filter models.TaskFilter)
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
-	// Load objectives and tags for each task
-	for _, task := range tasks {
-		task.Objectives, err = s.loadObjectives(ctx, task.ID)
-		if err != nil {
-			return nil, fmt.Errorf("load objectives: %w", err)
+	// Batch load objectives and tags to avoid N+1 queries
+	if len(tasks) > 0 {
+		// Collect all task IDs
+		taskIDs := make([]string, len(tasks))
+		for i, task := range tasks {
+			taskIDs[i] = task.ID
 		}
 
-		task.Tags, err = s.loadTags(ctx, task.ID)
+		// Load all objectives in one query
+		objectivesMap, err := s.loadObjectivesBatch(ctx, taskIDs)
 		if err != nil {
-			return nil, fmt.Errorf("load tags: %w", err)
+			return nil, fmt.Errorf("batch load objectives: %w", err)
+		}
+
+		// Load all tags in one query
+		tagsMap, err := s.loadTagsBatch(ctx, taskIDs)
+		if err != nil {
+			return nil, fmt.Errorf("batch load tags: %w", err)
+		}
+
+		// Assign objectives and tags to tasks
+		for _, task := range tasks {
+			task.Objectives = objectivesMap[task.ID]
+			task.Tags = tagsMap[task.ID]
+
+			// Ensure empty slices instead of nil
+			if task.Objectives == nil {
+				task.Objectives = []models.Objective{}
+			}
+			if task.Tags == nil {
+				task.Tags = []string{}
+			}
+
+			// Calculate computed fields (Progress, IsOverdue, DaysLeft)
+			s.calculateComputedFields(task)
 		}
 	}
 
@@ -392,10 +437,42 @@ func (s *SQLiteStorage) SearchTasks(ctx context.Context, query string) ([]*model
 		tasks = append(tasks, task)
 	}
 
-	// Load related data
-	for _, task := range tasks {
-		task.Objectives, _ = s.loadObjectives(ctx, task.ID)
-		task.Tags, _ = s.loadTags(ctx, task.ID)
+	// Batch load objectives and tags to avoid N+1 queries
+	if len(tasks) > 0 {
+		// Collect all task IDs
+		taskIDs := make([]string, len(tasks))
+		for i, task := range tasks {
+			taskIDs[i] = task.ID
+		}
+
+		// Load all objectives in one query
+		objectivesMap, err := s.loadObjectivesBatch(ctx, taskIDs)
+		if err != nil {
+			return nil, fmt.Errorf("batch load objectives: %w", err)
+		}
+
+		// Load all tags in one query
+		tagsMap, err := s.loadTagsBatch(ctx, taskIDs)
+		if err != nil {
+			return nil, fmt.Errorf("batch load tags: %w", err)
+		}
+
+		// Assign objectives and tags to tasks
+		for _, task := range tasks {
+			task.Objectives = objectivesMap[task.ID]
+			task.Tags = tagsMap[task.ID]
+
+			// Ensure empty slices instead of nil
+			if task.Objectives == nil {
+				task.Objectives = []models.Objective{}
+			}
+			if task.Tags == nil {
+				task.Tags = []string{}
+			}
+
+			// Calculate computed fields
+			s.calculateComputedFields(task)
+		}
 	}
 
 	return tasks, nil
@@ -432,13 +509,25 @@ func (s *SQLiteStorage) ReorderTasks(ctx context.Context, ids []string) error {
 	defer tx.Rollback()
 
 	// Update order_index based on position in array
+	var totalUpdated int64
 	for i, id := range ids {
-		_, err = tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			UPDATE tasks SET order_index = ? WHERE id = ?
 		`, i, id)
 		if err != nil {
 			return fmt.Errorf("update task order: %w", err)
 		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("get rows affected: %w", err)
+		}
+		totalUpdated += rowsAffected
+	}
+
+	// Verify at least some tasks were reordered
+	if totalUpdated == 0 {
+		return fmt.Errorf("%w: no tasks found with provided IDs", storage.ErrNotFound)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -516,6 +605,13 @@ func (s *SQLiteStorage) DeleteTasksBulk(ctx context.Context, ids []string) error
 		return nil
 	}
 
+	// Use transaction for consistency with other bulk operations
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	// Build IN clause
 	placeholders := make([]string, len(ids))
 	args := make([]interface{}, len(ids))
@@ -525,12 +621,45 @@ func (s *SQLiteStorage) DeleteTasksBulk(ctx context.Context, ids []string) error
 	}
 
 	query := fmt.Sprintf("DELETE FROM tasks WHERE id IN (%s)", strings.Join(placeholders, ","))
-	_, err := s.db.ExecContext(ctx, query, args...)
+	result, err := tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("delete tasks: %w", err)
 	}
 
+	// Verify at least some rows were deleted
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("%w: no tasks found with provided IDs", storage.ErrNotFound)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
 	return nil
+}
+
+// GetMaxOrderIndex returns the maximum order_index value across all tasks
+func (s *SQLiteStorage) GetMaxOrderIndex(ctx context.Context) (int, error) {
+	var maxOrder sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT MAX(order_index) FROM tasks
+	`).Scan(&maxOrder)
+
+	if err != nil {
+		return 0, fmt.Errorf("get max order index: %w", err)
+	}
+
+	// If no tasks exist, MAX returns NULL, so return -1 (next will be 0)
+	if !maxOrder.Valid {
+		return -1, nil
+	}
+
+	return int(maxOrder.Int64), nil
 }
 
 // Helper functions
@@ -592,4 +721,114 @@ func (s *SQLiteStorage) loadTags(ctx context.Context, taskID string) ([]string, 
 	}
 
 	return tags, rows.Err()
+}
+
+// calculateComputedFields calculates Progress, IsOverdue, and DaysLeft for a task
+func (s *SQLiteStorage) calculateComputedFields(task *models.Task) {
+	// Calculate progress based on completed objectives
+	if len(task.Objectives) > 0 {
+		completed := 0
+		for _, obj := range task.Objectives {
+			if obj.Completed {
+				completed++
+			}
+		}
+		task.Progress = float64(completed) / float64(len(task.Objectives)) * 100
+	} else {
+		task.Progress = 0
+	}
+
+	// Calculate IsOverdue and DaysLeft based on deadline
+	if task.Deadline.Date != nil {
+		now := time.Now()
+		task.IsOverdue = task.Deadline.Date.Before(now) && task.Status == "active"
+
+		days := int(time.Until(*task.Deadline.Date).Hours() / 24)
+		task.DaysLeft = &days
+	} else {
+		task.IsOverdue = false
+		task.DaysLeft = nil
+	}
+}
+
+// loadObjectivesBatch loads objectives for multiple tasks in one query
+// Returns a map of taskID -> objectives
+func (s *SQLiteStorage) loadObjectivesBatch(ctx context.Context, taskIDs []string) (map[string][]models.Objective, error) {
+	if len(taskIDs) == 0 {
+		return map[string][]models.Objective{}, nil
+	}
+
+	// Build IN clause with placeholders
+	placeholders := make([]string, len(taskIDs))
+	args := make([]interface{}, len(taskIDs))
+	for i, id := range taskIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, task_id, text, completed, order_index, created_at
+		FROM objectives
+		WHERE task_id IN (%s)
+		ORDER BY task_id, order_index ASC
+	`, strings.Join(placeholders, ","))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Map of task_id -> objectives
+	result := make(map[string][]models.Objective)
+	for rows.Next() {
+		var obj models.Objective
+		if err := rows.Scan(&obj.ID, &obj.TaskID, &obj.Text, &obj.Completed, &obj.Order, &obj.CreatedAt); err != nil {
+			return nil, err
+		}
+		result[obj.TaskID] = append(result[obj.TaskID], obj)
+	}
+
+	return result, rows.Err()
+}
+
+// loadTagsBatch loads tags for multiple tasks in one query
+// Returns a map of taskID -> tags
+func (s *SQLiteStorage) loadTagsBatch(ctx context.Context, taskIDs []string) (map[string][]string, error) {
+	if len(taskIDs) == 0 {
+		return map[string][]string{}, nil
+	}
+
+	// Build IN clause with placeholders
+	placeholders := make([]string, len(taskIDs))
+	args := make([]interface{}, len(taskIDs))
+	for i, id := range taskIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT task_id, tag
+		FROM task_tags
+		WHERE task_id IN (%s)
+		ORDER BY task_id, tag
+	`, strings.Join(placeholders, ","))
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Map of task_id -> tags
+	result := make(map[string][]string)
+	for rows.Next() {
+		var taskID, tag string
+		if err := rows.Scan(&taskID, &tag); err != nil {
+			return nil, err
+		}
+		result[taskID] = append(result[taskID], tag)
+	}
+
+	return result, rows.Err()
 }

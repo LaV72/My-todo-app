@@ -79,6 +79,10 @@ func (s *SQLiteStorage) GetStats(ctx context.Context) (*models.Stats, error) {
 		stats.CategoryStats[category] = count
 	}
 
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
+	}
+
 	// Get priority stats
 	rows, err = s.db.QueryContext(ctx, `
 		SELECT priority, COUNT(*) as count
@@ -97,6 +101,10 @@ func (s *SQLiteStorage) GetStats(ctx context.Context) (*models.Stats, error) {
 			return nil, fmt.Errorf("scan priority stat: %w", err)
 		}
 		stats.PriorityStats[priority] = count
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	// TODO: Calculate average time to complete (requires tracking completion time)
@@ -142,20 +150,45 @@ func (s *SQLiteStorage) GetDailyStats(ctx context.Context, from, to time.Time) (
 		stats = append(stats, stat)
 	}
 
-	// Get completion stats
-	for _, stat := range stats {
-		nextDay := stat.Date.Add(24 * time.Hour)
-		err := s.db.QueryRowContext(ctx, `
-			SELECT COUNT(*), COALESCE(SUM(reward), 0)
-			FROM tasks
-			WHERE DATE(completed_at) = DATE(?)
-		`, stat.Date).Scan(&stat.TasksCompleted, &stat.RewardsEarned)
+	// Get completion stats in a single query
+	completionRows, err := s.db.QueryContext(ctx, `
+		SELECT
+			DATE(completed_at) as date,
+			COUNT(*) as tasks_completed,
+			COALESCE(SUM(reward), 0) as rewards_earned
+		FROM tasks
+		WHERE completed_at IS NOT NULL
+			AND DATE(completed_at) BETWEEN DATE(?) AND DATE(?)
+		GROUP BY DATE(completed_at)
+	`, from, to)
 
-		if err != nil {
-			return nil, fmt.Errorf("query completions for %s: %w", stat.Date, err)
+	if err != nil {
+		return nil, fmt.Errorf("query completion stats: %w", err)
+	}
+	defer completionRows.Close()
+
+	// Create map for fast lookup
+	completionMap := make(map[string]*models.DailyStat)
+	for completionRows.Next() {
+		var dateStr string
+		var completed, rewards int
+		if err := completionRows.Scan(&dateStr, &completed, &rewards); err != nil {
+			return nil, fmt.Errorf("scan completion stat: %w", err)
 		}
 
-		_ = nextDay // Suppress unused variable warning
+		completionMap[dateStr] = &models.DailyStat{
+			TasksCompleted: completed,
+			RewardsEarned:  rewards,
+		}
+	}
+
+	// Merge completion data with creation data
+	for _, stat := range stats {
+		dateStr := stat.Date.Format("2006-01-02")
+		if completion, exists := completionMap[dateStr]; exists {
+			stat.TasksCompleted = completion.TasksCompleted
+			stat.RewardsEarned = completion.RewardsEarned
+		}
 	}
 
 	return stats, nil

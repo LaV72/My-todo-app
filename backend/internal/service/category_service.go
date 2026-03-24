@@ -14,14 +14,16 @@ import (
 type CategoryServiceImpl struct {
 	storage   storage.Storage
 	validator *validator.Validate
+	idGen     IDGenerator
 	config    *Config
 }
 
 // NewCategoryService creates a new CategoryService
-func NewCategoryService(storage storage.Storage, validate *validator.Validate, config *Config) CategoryService {
+func NewCategoryService(storage storage.Storage, idGen IDGenerator, validate *validator.Validate, config *Config) CategoryService {
 	return &CategoryServiceImpl{
 		storage:   storage,
 		validator: validate,
+		idGen:     idGen,
 		config:    config,
 	}
 }
@@ -30,12 +32,12 @@ func NewCategoryService(storage storage.Storage, validate *validator.Validate, c
 func (s *CategoryServiceImpl) CreateCategory(ctx context.Context, req models.CategoryCreateRequest) (*models.Category, error) {
 	// 1. Validate input
 	if err := s.validator.Struct(req); err != nil {
-		return nil, ErrInvalidInput
+		return nil, wrapValidationError(err)
 	}
 
-	// 2. Build category
+	// 2. Build category with generated UUID
 	category := &models.Category{
-		ID:    req.Name, // Use name as ID for simplicity
+		ID:    s.idGen.Generate(), // Generate unique ID
 		Name:  req.Name,
 		Color: req.Color,
 		Icon:  req.Icon,
@@ -72,7 +74,7 @@ func (s *CategoryServiceImpl) UpdateCategory(ctx context.Context, id string, req
 
 	// 2. Validate input
 	if err := s.validator.Struct(req); err != nil {
-		return nil, ErrInvalidInput
+		return nil, wrapValidationError(err)
 	}
 
 	// 3. Apply updates

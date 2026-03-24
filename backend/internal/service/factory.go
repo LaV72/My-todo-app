@@ -24,11 +24,13 @@ func NewServices(storage storage.Storage, config *Config) *Services {
 	idGen := &UUIDGenerator{}
 	clock := &SystemClock{}
 
-	// Create services
+	// Create services (TaskService first, then ObjectiveService which depends on it)
+	taskService := NewTaskService(storage, clock, idGen, validate, config)
+
 	return &Services{
-		Task:      NewTaskService(storage, clock, idGen, validate, config),
-		Objective: NewObjectiveService(storage, clock, idGen, validate, config),
-		Category:  NewCategoryService(storage, validate, config),
+		Task:      taskService,
+		Objective: NewObjectiveService(storage, taskService, clock, idGen, validate, config),
+		Category:  NewCategoryService(storage, idGen, validate, config),
 		Stats:     NewStatsService(storage),
 	}
 }
